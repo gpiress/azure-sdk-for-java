@@ -282,7 +282,7 @@ $PackageExclusions = @{
   "azure-cosmos-spark_3-1_2-12" = "Javadoc dependency issue.";
   "azure-cosmos-spark_3-2_2-12" = "Javadoc dependency issue.";
   "azure-cosmos-spark_3-3_2-12" = "Javadoc dependency issue.";
-  "azure-cosmos-spark_3-4_2-12" = "Javadoc dependency issue.";  
+  "azure-cosmos-spark_3-4_2-12" = "Javadoc dependency issue.";
   "azure-cosmos-test" = "Don't want to include the test framework package.";
   "azure-aot-graalvm-support-netty" = "No Javadocs for the package.";
   "azure-aot-graalvm-support" = "No Javadocs for the package.";
@@ -746,7 +746,7 @@ function Get-java-DocsMsMetadataForPackage($PackageInfo) {
 }
 
 # Defined in common.ps1 as:
-# $ValidateDocsMsPackagesFn = "Validate-${Language}-DocMsPackages" 
+# $ValidateDocsMsPackagesFn = "Validate-${Language}-DocMsPackages"
 function Validate-java-DocMsPackages ($PackageInfo, $PackageInfos, $DocValidationImageId) {
   # While eng/common/scripts/Update-DocsMsMetadata.ps1 is still passing a single packageInfo, process as a batch
   if (!$PackageInfos) {
@@ -767,4 +767,26 @@ function Get-java-EmitterName() {
 
 function Get-java-EmitterAdditionalOptions([string]$projectDirectory) {
   return "--option @azure-tools/typespec-java.emitter-output-dir=$projectDirectory/"
+}
+
+function Update-java-GeneratedSdks([string]$PackageFoldersFile) {
+  $packageFolders = Get-Content $PackageFoldersFile | ConvertFrom-Json
+
+  foreach ($folder in $packageFolders) {
+    Push-Location $RepoRoot
+    try {
+      Write-Host 'Generating projects under folder ' -ForegroundColor Green -NoNewline
+      Write-Host "$folder" -ForegroundColor Yellow
+
+      Invoke-LoggedCommand "python scripts/typespec_refresh_sdk/main.py sdk/$folder" -GroupOutput
+
+      if ($LastExitCode -ne 0) {
+        Write-Error "Generation error in $folder"
+        exit 1
+      }
+    }
+    finally {
+      Pop-Location
+    }
+  }
 }
