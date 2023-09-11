@@ -769,21 +769,35 @@ function Get-java-EmitterAdditionalOptions([string]$projectDirectory) {
   return "--option @azure-tools/typespec-java.emitter-output-dir=$projectDirectory/"
 }
 
+function Get-java-FoldersForGeneration() {
+    [array]$tspLocationFiles = Get-ChildItem -Path $RepoRoot -Filter "tsp-location.yaml" -Recurse
+    [array]$updateScripts = Get-ChildItem -Path $RepoRoot -Filter "Update-Codegeneration.ps1" -Recurse
+
+    $folders = ($tspLocationFiles + $updateScripts)
+    return $folders.Directory.FullName | Sort-Object -Unique
+}
+
 function Update-java-GeneratedSdks([string]$PackageFoldersFile) {
   $packageFolders = Get-Content $PackageFoldersFile | ConvertFrom-Json
 
   foreach ($folder in $packageFolders) {
     Push-Location $RepoRoot
     try {
-      Write-Host 'Generating projects under folder ' -ForegroundColor Green -NoNewline
-      Write-Host "$folder" -ForegroundColor Yellow
+        $tspLocationFile = Get-ChildItem -Path $folder -Filter "tsp-location.yaml"
+        $updateScript = Get-ChildItem -Path $folder -Filter "Update-Codegeneration.ps1" -Recurse
 
-      Invoke-LoggedCommand "python scripts/typespec_refresh_sdk/main.py sdk/$folder" -GroupOutput
-
-      if ($LastExitCode -ne 0) {
-        Write-Error "Generation error in $folder"
-        exit 1
-      }
+        if ($tspLocationFile) {
+            Write-Host "Found tsp-location.yaml in $folder, using typespec to generate projects"
+            ./eng/common/scripts/TypeSpec-Project-Sync.ps1 $folder
+            ./eng/common/scripts/TypeSpec-Project-Generate.ps1 $folder
+        } elseif ($updateScript) {
+            foreach ($script in (Get-ChildItem -Path $folder -Filter "Update-Codegeneration.ps1" -Recurse)) {
+                Write-Host "Found Update-Codegeneration.ps1 in $folder, using it to generate projects"
+                Invoke-Expression $script.FullName
+            }
+        } else {
+            Write-Host "No tsp-location.yaml or Update-Codegeneration.ps1 found in $folder, skipping"
+        }
     }
     finally {
       Pop-Location
