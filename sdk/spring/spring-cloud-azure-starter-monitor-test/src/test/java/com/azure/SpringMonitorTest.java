@@ -2,39 +2,44 @@
 // Licensed under the MIT License.
 package com.azure;
 
-import static java.util.concurrent.TimeUnit.SECONDS;
-import static org.assertj.core.api.Assertions.*;
-
-import com.azure.core.http.*;
+import com.azure.core.http.HttpClient;
+import com.azure.core.http.HttpPipeline;
+import com.azure.core.http.HttpPipelineBuilder;
 import com.azure.core.http.policy.HttpPipelinePolicy;
 import com.azure.monitor.applicationinsights.spring.OpenTelemetryVersionCheckRunner;
+import com.azure.monitor.applicationinsights.spring.selfdiagnostics.SelfDiagnosticsLevel;
 import com.azure.monitor.opentelemetry.exporter.implementation.models.*;
 import io.opentelemetry.sdk.logs.export.LogRecordExporter;
 import io.opentelemetry.sdk.metrics.export.MetricExporter;
 import io.opentelemetry.sdk.resources.Resource;
 import io.opentelemetry.sdk.trace.export.SpanExporter;
 import io.opentelemetry.semconv.resource.attributes.ResourceAttributes;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
+import reactor.util.annotation.Nullable;
+
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.stream.Collectors;
-import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import reactor.util.annotation.Nullable;
+
+import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(
-    classes = {Application.class, SpringMonitorTest.TestConfiguration.class},
+    classes = {Application.class, SpringMonitorTest.TestConfig.class},
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = {
       "applicationinsights.connection.string=InstrumentationKey=00000000-0000-0000-0000-0FEEDDADBEEF;IngestionEndpoint=https://test.in.applicationinsights.azure.com/;LiveEndpoint=https://test.livediagnostics.monitor.azure.com/"
     })
-public class SpringMonitorTest {
+class SpringMonitorTest {
 
   private static CountDownLatch countDownLatch;
 
@@ -53,9 +58,8 @@ public class SpringMonitorTest {
 
   @Autowired private Resource otelResource;
 
-  @Configuration(proxyBeanMethods = false)
-  static class TestConfiguration {
-
+  @TestConfiguration
+  static class TestConfig {
     @Bean
     HttpPipeline httpPipeline() {
       countDownLatch = new CountDownLatch(2);
@@ -69,10 +73,16 @@ public class SpringMonitorTest {
           .policies(policy)
           .build();
     }
+
+    @Bean
+    @Primary
+    SelfDiagnosticsLevel testSelfDiagnosticsLevel() {
+      return SelfDiagnosticsLevel.DEBUG;
+    }
   }
 
   @Test
-  public void applicationContextShouldOnlyContainTheAzureSpanExporter() {
+  void applicationContextShouldOnlyContainTheAzureSpanExporter() {
     List<SpanExporter> spanExporters = otelSpanExportersProvider.getIfAvailable();
     assertThat(spanExporters).hasSize(1);
 
@@ -84,7 +94,7 @@ public class SpringMonitorTest {
   }
 
   @Test
-  public void applicationContextShouldOnlyContainTheAzureLogRecordExporter() {
+  void applicationContextShouldOnlyContainTheAzureLogRecordExporter() {
     List<LogRecordExporter> logRecordExporters = otelLoggerExportersProvider.getIfAvailable();
     assertThat(logRecordExporters).hasSize(1);
 
@@ -96,7 +106,7 @@ public class SpringMonitorTest {
   }
 
   @Test
-  public void applicationContextShouldOnlyContainTheAzureMetricExporter() {
+  void applicationContextShouldOnlyContainTheAzureMetricExporter() {
     List<MetricExporter> metricExporters = otelMetricExportersProvider.getIfAvailable();
     assertThat(metricExporters).hasSize(1);
 
@@ -108,7 +118,7 @@ public class SpringMonitorTest {
   }
 
   @Test
-  public void shouldMonitor() throws InterruptedException, MalformedURLException {
+  void shouldMonitor() throws InterruptedException, MalformedURLException {
 
     // Only required with GraalVM native test execution
     // we aren't sure why this is needed, seems to be a Logback issue with GraalVM native
@@ -170,7 +180,7 @@ public class SpringMonitorTest {
   }
 
   @Test
-  public void verifyOpenTelemetryVersion() {
+  void verifyOpenTelemetryVersion() {
     String currentOTelVersion = otelResource.getAttribute(ResourceAttributes.TELEMETRY_SDK_VERSION);
     assertThat(OpenTelemetryVersionCheckRunner.STARTER_OTEL_VERSION)
         .as(
